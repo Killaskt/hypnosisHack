@@ -4,8 +4,7 @@ import numpy as np
 
 # Load the pre-trained face detector and facial landmarks predictor from dlib
 detector = dlib.get_frontal_face_detector()
-predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')  # Download this from dlib
-# predictor = dlib.shape_predictor('shape_predictor_5_face_landmarks.dat')  # Download this from dlib
+predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')  # Use 68 or 5 landmarks predictor as necessary
 
 # Camera setup
 cap = cv2.VideoCapture(0)
@@ -34,6 +33,22 @@ def calculate_ear(eye):
     C = np.linalg.norm(eye[0] - eye[3])
     ear = (A + B) / (2.0 * C)
     return ear
+
+# Function to convert rotation vectors to Euler angles (pitch, yaw, roll)
+def rotation_matrix_to_euler_angles(R):
+    sy = np.sqrt(R[0, 0] * R[0, 0] + R[1, 0] * R[1, 0])
+    singular = sy < 1e-6
+
+    if not singular:
+        x = np.arctan2(R[2, 1], R[2, 2])
+        y = np.arctan2(-R[2, 0], sy)
+        z = np.arctan2(R[1, 0], R[0, 0])
+    else:
+        x = np.arctan2(-R[1, 2], R[1, 1])
+        y = np.arctan2(-R[2, 0], sy)
+        z = 0
+
+    return np.degrees(x), np.degrees(y), np.degrees(z)  # Convert from radians to degrees
 
 # Loop to process video frame by frame
 while True:
@@ -75,6 +90,10 @@ while True:
         p2 = (int(nose_end_point2D[0][0][0]), int(nose_end_point2D[0][0][1]))
         cv2.line(frame, p1, p2, (255, 0, 0), 2)
 
+        # Convert rotation vector to rotation matrix
+        rotation_matrix, _ = cv2.Rodrigues(rotation_vector)
+        pitch, yaw, roll = rotation_matrix_to_euler_angles(rotation_matrix)
+
         # Detect eyes for EAR (for simplicity, this uses fixed points for left and right eyes)
         left_eye = landmarks[36:42]
         right_eye = landmarks[42:48]
@@ -82,7 +101,6 @@ while True:
         # Compute EAR for both eyes
         left_ear = calculate_ear(left_eye)
         right_ear = calculate_ear(right_eye)
-
         ear = (left_ear + right_ear) / 2.0
 
         # Define a threshold for drowsiness (typically 0.2-0.25)
@@ -90,6 +108,14 @@ while True:
             cv2.putText(frame, "Drowsy", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
         else:
             cv2.putText(frame, "Awake", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+        # Display head pose angles
+        cv2.putText(frame, f"Pitch: {pitch:.2f}", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+        cv2.putText(frame, f"Yaw: {yaw:.2f}", (50, 180), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+        cv2.putText(frame, f"Roll: {roll:.2f}", (50, 210), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+
+        # Display EAR (drowsiness confidence)
+        cv2.putText(frame, f"EAR: {ear:.2f}", (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
     # Display the resulting frame
     cv2.imshow("Frame", frame)
