@@ -5,7 +5,10 @@
    2.1 source venv/bin/activate # On macOS/Linux
    2.2 .\venv\Scripts\activate # On Windows
 3. pip install -r requirements.txt
-4. python main.py
+4. Download shape predictor
+   4.1 https://www.kaggle.com/datasets/sergiovirahonda/shape-predictor-68-face-landmarksdat?resource=download
+5. Place it inside a folder called "predictions"
+6. python main.py
 
 ### installs:
 
