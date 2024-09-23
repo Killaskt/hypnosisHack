@@ -209,7 +209,7 @@ class DriverDash:
 
         # real-time data point icon
         if self.heart_rate_icon:
-            self.add_icon(image=self.heart_rate_icon, label="yolo", color=self.RED, data_point=72)  # Initial heart rate
+            self.add_icon(image=self.heart_rate_icon, color=self.RED, data_point=72)  # Initial heart rate
 
         while running:
             self.screen.fill(self.BLACK)
@@ -217,6 +217,11 @@ class DriverDash:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
+
+                # Check for keypress events
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_q:  # If 'q' is pressed
+                        running = False
 
             # Update and draw elements
             self.draw_semi_gauge(200, 300, self.speed, self.max_speed, 'MPH', self.BLUE)  # Shifted left
@@ -227,8 +232,8 @@ class DriverDash:
             self.draw_popup()
 
             # Simulate heart rate update (real-time data)
-            updated_heart_rate = 72 + int((pygame.time.get_ticks() / 1000) % 30)  # Just for demo purposes
-            self.update_icon_data(1, updated_heart_rate)  # Update the heart rate icon data
+            # updated_heart_rate = 72 + int((pygame.time.get_ticks() / 1000) % 30)  # Just for demo purposes
+            # self.update_icon_data(1, updated_heart_rate)  # Update the heart rate icon data
 
             # Simulate speed change (for testing)
             self.speed = (self.speed + 0.5) % self.max_speed

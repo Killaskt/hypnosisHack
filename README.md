@@ -1,9 +1,20 @@
+## Get Started
+
+1. python -m env venv
+2. Activate env
+   2.1 source venv/bin/activate # On macOS/Linux
+   2.2 .\venv\Scripts\activate # On Windows
+3. pip install -r requirements.txt
+4. python main.py
+
 ### installs:
 
 - opencv-python
 - mediapipe
 - dlib (maybe remove)
 - scipy ?
+
+Use pip freeze > requirements.txt to add more necessary depenencies to requirements.txt
 
 ### Tech Stack and Libraries for Implementation
 

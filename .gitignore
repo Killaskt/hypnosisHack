@@ -1,3 +1,10 @@
-# ignore env
+# .gitignore
+predictors/
+
+# cache
+__pycache__/
+apps/__pycache__/
+icons/__pycache__/
+
+# ignore environment
 venv/
-predictors/shape_predictor_68_face_landmarks.dat
