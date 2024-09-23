@@ -13,6 +13,7 @@ def run_main_logic(dashboard, healthApp):
     """Main logic that runs concurrently with the GUI, updating heart rate"""
     run = 0
     try:
+        dashboard.show_popup("Test Popup", 3)
         while True:
             # Simulate main logic running concurrently (e.g., updating heart rate)
             # Update heart rate in the dashboard (assume heart rate icon is at index 1)
@@ -20,6 +21,7 @@ def run_main_logic(dashboard, healthApp):
             if run % 10 == 0:
                 dashboard.update_icon_data(icon_index=1, data_point=healthApp.get_heart_rate())
                 print(f"Main logic running... run = {run} Updated heart rate to {healthApp.get_heart_rate()}")
+
             
             run += 1
             time.sleep(0.2)
@@ -69,6 +71,7 @@ if __name__ == "__main__":
     finally:
         # Stop the background thread gracefully
         stop_event.set()  # Signal the stop event to terminate the background thread
+        health_app_thread.join()
         logic_thread.join()  # Wait for the logic thread to finish
 
         print("Program terminated cleanly.")

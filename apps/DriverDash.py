@@ -1,6 +1,7 @@
 import pygame
 import os
 import math
+import time
 
 class DriverDash:
     def __init__(self, HealthApp=None):
@@ -138,17 +139,43 @@ class DriverDash:
     def show_popup(self, message, duration):
         """Display a temporary popup message"""
         self.popup_msg = message
-        self.popup_start_time = time.time()
         self.popup_duration = duration
+        self.popup_start_time = pygame.time.get_ticks() / 1000  # Set the time when the popup is triggered
 
     def draw_popup(self):
-        """Draw the popup message if active, with subtle background and smaller size"""
-        if self.popup_msg and time.time() - self.popup_start_time < self.popup_duration:
-            popup_text = self.font.render(self.popup_msg, True, self.WHITE)
-            popup_rect = pygame.Rect(300, 200, 400, 40)
-            pygame.draw.rect(self.screen, self.POPUP_BG, popup_rect)  # Subtle background
-            pygame.draw.rect(self.screen, self.LIGHT_GRAY, popup_rect, 2)  # Border
-            self.screen.blit(popup_text, (310, 205))
+        """Draw the popup message if active, with centered text and larger popup height"""
+        if self.popup_msg:
+            current_time = pygame.time.get_ticks() / 1000  # Get the current time in seconds
+            # print(f"\n\n Popup active - {current_time}s, start_time: {self.popup_start_time}s \n\n")
+            
+            # Check if the popup duration has expired
+            if (current_time - self.popup_start_time) < self.popup_duration:
+                # Render the popup text
+                popup_text = self.font.render(self.popup_msg, True, self.WHITE)
+                
+                # Determine the size of the popup based on text width and desired height
+                popup_width = popup_text.get_width() + 40  # Add padding around the text
+                popup_height = popup_text.get_height() + 30  # Larger popup height
+                popup_x = (self.screen_width - popup_width) // 2  # Center the popup horizontally
+                popup_y = (self.screen_height - popup_height) // 2  # Center the popup vertically
+
+                # Create the popup rectangle
+                popup_rect = pygame.Rect(popup_x, popup_y, popup_width, popup_height)
+                
+                # Draw the popup background
+                pygame.draw.rect(self.screen, self.POPUP_BG, popup_rect)
+                
+                # Draw the popup border
+                pygame.draw.rect(self.screen, self.LIGHT_GRAY, popup_rect, 2)
+
+                # Center the text within the popup
+                text_x = popup_x + (popup_width - popup_text.get_width()) // 2
+                text_y = popup_y + (popup_height - popup_text.get_height()) // 2
+                self.screen.blit(popup_text, (text_x, text_y))
+            else:
+                # print(f"\n\n Popup duration exceeded. Hiding popup.\n\n")
+                # Reset the popup message once the time is up
+                self.popup_msg = ""
 
     def draw_main_readouts(self):
         """Draw the main MPH and Temp readout at the top center"""
@@ -222,6 +249,7 @@ class DriverDash:
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_q:  # If 'q' is pressed
                         running = False
+
 
             # Update and draw elements
             self.draw_semi_gauge(200, 300, self.speed, self.max_speed, 'MPH', self.BLUE)  # Shifted left
