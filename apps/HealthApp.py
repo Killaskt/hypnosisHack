@@ -2,13 +2,12 @@ import time
 import random
 
 class HealthApp:
-    def __init__(self, heartRate=75, sleepScore=7):
+    def __init__(self, heart_rate=75, body_battery=7):
         self.heart_rate_override = False
-
-        self._current_heart_rate = heartRate
-        self._target_heart_rate = heartRate # this will update where the heart rate will simulate to, in case needed for simulation
+        self._current_heart_rate = heart_rate
+        self._target_heart_rate = heart_rate # this will update where the heart rate will simulate to, in case needed for simulation
         self._blood_pressure = (120, 80)  # systolic, diastolic
-        self._sleep_score = sleepScore # below 4 concerns the system
+        self._body_battery = body_battery # below 4 concerns the system
     
     def get_heart_rate(self):
         return self._current_heart_rate
@@ -30,7 +29,6 @@ class HealthApp:
                 self._current_heart_rate += 1
             elif self._current_heart_rate > target_rate:
                 self._current_heart_rate -= 1
-
             # print(f"Current heart rate: {self._current_heart_rate}")
             time.sleep(0.5)  # Adding a delay to simulate real-time updates
 
@@ -54,14 +52,14 @@ class HealthApp:
             print(f"Reached target heart rate: {self._current_heart_rate}. Waiting before generating new target...\n")
             time.sleep(2)  # Wait 2 seconds before generating the next target
 
-    def getBloodPressure(self):
+    def get_blood_pressue(self):
         return self._avgHeartbeat
 
-    def getSleepScore(self):
+    def get_body_battery(self):
         # 0 - 3 DANGER
         # 4 - 5 WARNING
         # 6 - 10 OKAY
-        return self._sleep_score
+        return self._body_battery
     
     def start_health_app(self):
         self.start_heartbeat_monitor()

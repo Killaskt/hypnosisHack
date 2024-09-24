@@ -64,6 +64,14 @@ class DriverDash:
         # Icons and lights
         self.icons = []  # Will hold all lights/icons to display
 
+        # Diagnostic data from the camera (default values)
+        self.hypo_fixated_time = 0.0
+        self.hypnotized = 'none'
+        self.distracted = False
+        self.drowsy = False
+        self.drowsy_confidence = 0.0
+        self.distracted_duration = 0.0
+
         # Load engine icon image with error handling and recoloring
         self.engine_icon = self.verify_image_path('icons/engine-icon.png')  # Use the correct path to your image
         self.heart_rate_icon = self.verify_image_path('icons/heartbeat-icon.png')  # Use the correct path to your image
@@ -314,6 +322,41 @@ class DriverDash:
         if 0 <= icon_index < len(self.icons):
             self.icons[icon_index]['data_point'] = data_point
 
+    def update_diagnostic_data(self, hypo_fixated_time=None, hypnotized=None, distracted=None, drowsy=None, drowsy_confidence=None, distracted_duration=None):
+        """Update the diagnostic data values"""
+        if hypo_fixated_time is not None:
+            self.hypo_fixated_time = hypo_fixated_time
+        if hypnotized is not None:
+            self.hypnotized = hypnotized
+        if distracted is not None:
+            self.distracted = distracted
+        if drowsy is not None:
+            self.drowsy = drowsy
+        if drowsy_confidence is not None:
+            self.drowsy_confidence = drowsy_confidence
+        if distracted_duration is not None:
+            self.distracted_duration = distracted_duration
+
+    def draw_diagnostic_data(self):
+        """Draw the diagnostic data on the top-right of the screen"""
+        diagnostic_text = [
+            f'Hypo Fixated Time: {self.hypo_fixated_time:.2f}s',
+            f'Hypnotized: {self.hypnotized}',
+            f'Distracted: {"Yes" if self.distracted else "No"}',
+            f'Drowsy: {"Yes" if self.drowsy else "No"}',
+            f'Drowsy Confidence: {self.drowsy_confidence:.2f}s',
+            f'distracted duration: {self.distracted_duration:.2f}s'
+        ]
+        
+        # Starting position for the text (top-right corner)
+        start_x = self.screen_width - 300
+        start_y = 50
+
+        for i, line in enumerate(diagnostic_text):
+            diagnostic_surface = self.tiny_font.render(line, True, self.WHITE)
+            self.screen.blit(diagnostic_surface, (start_x, start_y + i * 20))
+
+
     def show_gui(self):
         """Main function to run the GUI"""
         running = True
@@ -349,6 +392,9 @@ class DriverDash:
             self.draw_fuel_temperature_bars()
             self.draw_icons()
             self.draw_popup()
+
+            # Draw diagnostic data
+            self.draw_diagnostic_data()
 
             # Simulate heart rate update (real-time data)
             # updated_heart_rate = 72 + int((pygame.time.get_ticks() / 1000) % 30)  # Just for demo purposes

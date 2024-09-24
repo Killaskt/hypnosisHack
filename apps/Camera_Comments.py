@@ -272,7 +272,7 @@ class DrowsinessDetector:
         """
         Main loop to capture video feed, process each frame, and display the processed output.
         """
-        cap = cv2.VideoCapture(1)
+        cap = cv2.VideoCapture(0)
         focal_length = cap.get(3)
         center = (cap.get(3) / 2, cap.get(4) / 2)
         camera_matrix = np.array([[focal_length, 0, center[0]],

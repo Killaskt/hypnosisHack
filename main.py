@@ -1,8 +1,17 @@
 import threading
 import time
+from queue import Queue
 from apps.DriverDash import DriverDash  # Importing DriverDash from the apps folder
 from apps.HealthApp import HealthApp
+from apps.Camera import Camera
+from apps.Serverity import Severity, SeverityActionManager, SeverityCalculator
+import threading
 
+log_lock = threading.Lock()
+
+def log_message(message):
+    with log_lock:
+        print(message)
 
 #
 # Need to make threads to start the gui and camera
@@ -12,8 +21,6 @@ from apps.HealthApp import HealthApp
 # since we are using the 68 predictor model maybe, we keep losing the ability to get data if full face ear to ear cant be seen
 # add icon to gui to show which level we are in
 # maybe add camera data to gui for demo purposes
-# garbage data and ear ot ear issue is huge for camera
-# hypnosis needed still
 #
 #
 # drowsy we need a confidence value from it but assume true if its 60% confident, false otherwise
@@ -30,38 +37,31 @@ from apps.HealthApp import HealthApp
 # ACTIONS
 
 # maybe update popup to add error, warning, normal which changes colors to red alert etc
-def action_temp_change(dashboard, temp=85, normal=70, duration=5):
-    dashboard.update_temp(temp)
-    dashboard.show_popup("Harsh Temp Increase!", duration)
-    time.sleep(duration)
-    dashboard.update_temp(normal)
-
-def action_seat_haptics(dashboard, duration):
-    dashboard.show_popup("Habtic Seat Feedback!", duration)
-
-def action_call_driver():
-    pass
-
-def action_reducing_speed(dashboard, minspeed=50, duration=5):
-    dashboard.set_speed_for_duration(minspeed, duration)
-    dashboard.show_popup("Speed Decrease!", duration)
-    time.sleep(duration)
-    # dashboard.set_speed_for_duration(normal, 5) # it resets itself so no need
-    pass
-
-def action_steering_wheel():
-    # heated steering wheel
-    pass
-
-def action_play_audio():
-    pass
 
 # ACTIONS END
 
-def run_main_logic(dashboard, healthApp):
+def run_main_logic(dashboard, healthApp, camera_queue, severityActionManager):
     """Main logic that runs concurrently with the GUI, updating heart rate"""
     run = 0
     try:
+        severity = Severity()
+
+        # Example usage for heart rate
+        heart_rate = 75
+        heart_rate_severity = severity.translate("heart_rate", heart_rate)
+        print(f"Heart Rate Severity: {heart_rate_severity.value}")
+
+        # Example usage for drowsiness
+        drowsiness_score = 45
+        drowsiness_severity = severity.translate("drowsiness", drowsiness_score)
+        print(f"Drowsiness Severity: {drowsiness_severity.value}")
+
+        # Example usage for hypnosis
+        hypnosis_time = 65
+        hypnosis_severity = severity.translate("hypnosis", hypnosis_time)
+        print(f"Hypnosis Severity: {hypnosis_severity.value}")
+
+
         dashboard.show_popup("Test Popup", 3)
         while True:
             # Simulate main logic running concurrently (e.g., updating heart rate)
@@ -71,14 +71,22 @@ def run_main_logic(dashboard, healthApp):
                 dashboard.update_icon_data(icon_index=1, data_point=healthApp.get_heart_rate())
                 print(f"Main logic running... run = {run} Updated heart rate to {healthApp.get_heart_rate()}")
 
+            if run % 5 == 0:
+                if not camera_queue.empty():
+                    data = camera_queue.get()
+                    # Simulate updating diagnostic data (you can replace these values with real data from your camera)
+                    dashboard.update_diagnostic_data(hypo_fixated_time=data['fixation_start_time'], hypnotized=data['hypnotized'], distracted=data['distracted'], drowsy=data['drowsy'], drowsy_confidence=data['drowsy_confidence'], distracted_duration=data['distracted_duration'])
+                    log_message(f"Distracted: {data['distracted']}, Drowsy: {data['drowsy']}, Hypnotized: {data['hypnotized']}, Yaw: {data['yaw']:.2f}, Pitch: {data['pitch']:.2f}")
+                else:
+                    print("none this time")
 
             if run == 20:
                 print("\n\n UPDATE TEMP TEST \n\n")
-                action_temp_change(dashboard=dashboard)
+                severityActionManager.action_temp_change()
 
             if run == 40:
                 print("\n\n UPDATE SPEED TEST \n\n")
-                action_reducing_speed(dashboard=dashboard)
+                severityActionManager.action_reducing_speed()
             
             run += 1
             time.sleep(0.2)
@@ -87,7 +95,7 @@ def run_main_logic(dashboard, healthApp):
         print("Main logic stopped.")
 
 if __name__ == "__main__":
-    print("Ultimte Hypnosis Detector starting...")
+    print("Ultimate Hypnosis Detector starting...")
 
     # BEFORE
     # simulate heart rate
@@ -101,21 +109,29 @@ if __name__ == "__main__":
     # simulate volume (audio)
 
     heart_rate = 72  # Example starting value for heart rate
-    sleep_score = 8
+    body_battery = 8
     
     # Event to signal when to stop the threads
     stop_event = threading.Event()
 
-    # Create an instance of the dashboard
-    heathApp = HealthApp(heartRate=heart_rate, sleepScore=sleep_score)
-    dashboard = DriverDash()
+    # Output queues
+    camera_queue = Queue()
 
+    # Create an instance of the dashboard
+    heathApp = HealthApp(heart_rate=heart_rate, body_battery=body_battery)
+    camera = Camera(output_queue=camera_queue)
+    dashboard = DriverDash()
+    severityActionManager = SeverityActionManager(dashboard=dashboard)
 
     health_app_thread = threading.Thread(target=heathApp.start_health_app)
     health_app_thread.start()
 
+    # Start the camera in its own thread
+    camera_thread = threading.Thread(target=camera.run)
+    camera_thread.start()
+
     # Start the main logic in a background thread
-    logic_thread = threading.Thread(target=run_main_logic, args=(dashboard,heathApp,))
+    logic_thread = threading.Thread(target=run_main_logic, args=(dashboard,heathApp,camera_queue,severityActionManager))
     logic_thread.start()
 
     try:
@@ -129,7 +145,11 @@ if __name__ == "__main__":
         # Stop the background thread gracefully
         stop_event.set()  # Signal the stop event to terminate the background thread
         health_app_thread.join()
+        camera_thread.join()
         logic_thread.join()  # Wait for the logic thread to finish
 
         print("Program terminated cleanly.")
     # The logic thread will continue to run concurrently, while the GUI runs on the main thread
+
+
+    # biggest things right now are to remove imshow and just have camera run in bg, and maybe add icons and stuff to gui
