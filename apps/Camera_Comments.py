@@ -5,7 +5,7 @@ import time
 from collections import deque
 
 class DrowsinessDetector:
-    def __init__(self, yaw_threshold=20.0, pitch_threshold=10.0, ear_threshold=0.25, buffer_size=30):
+    def __init__(self, yaw_threshold=20.0, pitch_threshold=10.0, ear_threshold=0.25, buffer_size=10):
         """
         Initialize the DrowsinessDetector class with specified thresholds and buffer size for yaw, pitch, and roll.
 
@@ -26,12 +26,12 @@ class DrowsinessDetector:
         self.distracted_start_time = None
         self.total_distracted_time = 0.0
 
-        # Circular queues to store the last N yaw, pitch, and roll values
+        # Circular queues to store the last N yaw, pitch, and roll values to smooth noisy data.
         self.yaw_buffer = deque(maxlen=buffer_size)
         self.pitch_buffer = deque(maxlen=buffer_size)
         self.roll_buffer = deque(maxlen=buffer_size)
 
-        # Model points for head pose estimation (nose, chin, eyes, mouth)
+        # Model points for head pose estimation (representing key points on the face).
         self.model_points = np.array([
             (0.0, 0.0, 0.0),        # Nose tip
             (0.0, -330.0, -65.0),   # Chin
@@ -135,7 +135,7 @@ class DrowsinessDetector:
         # Adjust the pitch to correct for camera orientation.
         pitch = self.adjust_pitch(pitch)
 
-        return pitch, yaw, roll, rotation_vector, translation_vector
+        return pitch, yaw, roll
 
     def update_buffer(self, pitch, yaw, roll):
         """
@@ -150,15 +150,41 @@ class DrowsinessDetector:
         self.roll_buffer.append(roll)
 
     def get_averaged_pose(self):
+        """
+        Return the averaged yaw, pitch, and roll values from the buffer.
+
+        Returns:
+        - avg_pitch, avg_yaw, avg_roll: The smoothed values of pitch, yaw, and roll.
+        """
         avg_pitch = sum(self.pitch_buffer) / len(self.pitch_buffer) if len(self.pitch_buffer) > 0 else 0
         avg_yaw = sum(self.yaw_buffer) / len(self.yaw_buffer) if len(self.yaw_buffer) > 0 else 0
         avg_roll = sum(self.roll_buffer) / len(self.roll_buffer) if len(self.roll_buffer) > 0 else 0
         return avg_pitch, avg_yaw, avg_roll
 
     def check_distraction(self, yaw, pitch):
+        """
+        Check if the user is distracted based on yaw and pitch exceeding the thresholds.
+
+        Parameters:
+        - yaw, pitch: The head pose angles to compare against the thresholds.
+
+        Returns:
+        - True if the user is distracted, False otherwise.
+        """
         return not (abs(yaw) <= self.yaw_threshold and abs(pitch) <= self.pitch_threshold)
 
     def process_frame(self, frame, camera_matrix):
+        """
+        Process a single frame, detecting the user's face, eyes, head pose, and checking for distraction and drowsiness.
+        Displays the yaw, pitch, roll, and distraction/drowsiness status on the frame.
+
+        Parameters:
+        - frame: The current frame from the video feed.
+        - camera_matrix: The camera matrix for pose estimation.
+
+        Returns:
+        - The processed frame with annotations.
+        """
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         faces = self.detector(gray)
 
@@ -178,8 +204,8 @@ class DrowsinessDetector:
                 cv2.putText(frame, "Partial face: Distracted", (50, 300), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                 continue
 
-            # Estimate head pose and get the rotation vector, translation vector for projection.
-            pitch, yaw, roll, rotation_vector, translation_vector = self.estimate_head_pose(landmarks, camera_matrix)
+            # Estimate head pose based on landmarks.
+            pitch, yaw, roll = self.estimate_head_pose(landmarks, camera_matrix)
             self.update_buffer(pitch, yaw, roll)
             avg_pitch, avg_yaw, avg_roll = self.get_averaged_pose()
 
@@ -227,12 +253,25 @@ class DrowsinessDetector:
         return frame
 
     def are_essential_landmarks_visible(self, landmarks):
-        for i in [30, 8, 36, 45]:
+        """
+        Check if essential landmarks (nose, eyes, chin) are visible.
+        If any of these landmarks are out of frame, assume the user is distracted.
+
+        Parameters:
+        - landmarks: The facial landmarks detected.
+
+        Returns:
+        - True if essential landmarks are visible, False otherwise.
+        """
+        for i in [30, 8, 36, 45]:  # Nose tip, chin, left eye, right eye.
             if landmarks[i][0] <= 0 or landmarks[i][1] <= 0:
                 return False
         return True
 
     def run(self):
+        """
+        Main loop to capture video feed, process each frame, and display the processed output.
+        """
         cap = cv2.VideoCapture(1)
         focal_length = cap.get(3)
         center = (cap.get(3) / 2, cap.get(4) / 2)
@@ -245,6 +284,7 @@ class DrowsinessDetector:
             if not ret:
                 break
 
+            # Process the current frame to detect drowsiness and distraction.
             processed_frame = self.process_frame(frame, camera_matrix)
             cv2.imshow("Drowsiness Detector", processed_frame)
 

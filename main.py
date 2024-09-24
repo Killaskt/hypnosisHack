@@ -7,7 +7,25 @@ from apps.HealthApp import HealthApp
 #
 # Need to make threads to start the gui and camera
 # Maybe make central data class to pass data through better, or maybe jsut some way to share data without getting too 
+# is it possible to have a cool 3d circle rotational display representing head transformation on the camera viwq
+# Need distracted tiem, need to account for garbage data, need to implement hypnosis, maybe make them all more robust
+# since we are using the 68 predictor model maybe, we keep losing the ability to get data if full face ear to ear cant be seen
+# add icon to gui to show which level we are in
+# maybe add camera data to gui for demo purposes
+# garbage data and ear ot ear issue is huge for camera
+# hypnosis needed still
 #
+#
+# drowsy we need a confidence value from it but assume true if its 60% confident, false otherwise
+# distracted true if they've been distracted in one occurence of distraction not total for more than 15s; false otherwise
+# hypnosis enums or string low if they've been hypnotized for 5m, mid 10m, high 15m 
+# make all these thresholds easily editable
+#
+
+        # Circular queues to store the last N yaw, pitch, and roll values
+        # self.yaw_buffer = deque(maxlen=buffer_size) # (left/right) is measured as rotation around the Y-axis.
+        # self.pitch_buffer = deque(maxlen=buffer_size) # (up/down) is measured as rotation around the X-axis.
+        # self.roll_buffer = deque(maxlen=buffer_size) # (tilt sideways) is measured as rotation around the Z-axis.
 
 # ACTIONS
 
