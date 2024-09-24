@@ -8,7 +8,7 @@ import numpy as np
 
 # Load the pre-trained face detector and facial landmarks predictor from dlib
 detector = dlib.get_frontal_face_detector()
-predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')  # Download this from dlib
+predictor = dlib.shape_predictor('predictors/shape_predictor_68_face_landmarks.dat')  # Download this from dlib
 # predictor = dlib.shape_predictor('shape_predictor_5_face_landmarks.dat')  # Download this from dlib
 
 # Camera setup

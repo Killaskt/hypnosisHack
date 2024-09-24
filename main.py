@@ -9,6 +9,37 @@ from apps.HealthApp import HealthApp
 # Maybe make central data class to pass data through better, or maybe jsut some way to share data without getting too 
 #
 
+# ACTIONS
+
+# maybe update popup to add error, warning, normal which changes colors to red alert etc
+def action_temp_change(dashboard, temp=85, normal=70, duration=5):
+    dashboard.update_temp(temp)
+    dashboard.show_popup("Harsh Temp Increase!", duration)
+    time.sleep(duration)
+    dashboard.update_temp(normal)
+
+def action_seat_haptics(dashboard, duration):
+    dashboard.show_popup("Habtic Seat Feedback!", duration)
+
+def action_call_driver():
+    pass
+
+def action_reducing_speed(dashboard, minspeed=50, duration=5):
+    dashboard.set_speed_for_duration(minspeed, duration)
+    dashboard.show_popup("Speed Decrease!", duration)
+    time.sleep(duration)
+    # dashboard.set_speed_for_duration(normal, 5) # it resets itself so no need
+    pass
+
+def action_steering_wheel():
+    # heated steering wheel
+    pass
+
+def action_play_audio():
+    pass
+
+# ACTIONS END
+
 def run_main_logic(dashboard, healthApp):
     """Main logic that runs concurrently with the GUI, updating heart rate"""
     run = 0
@@ -22,6 +53,14 @@ def run_main_logic(dashboard, healthApp):
                 dashboard.update_icon_data(icon_index=1, data_point=healthApp.get_heart_rate())
                 print(f"Main logic running... run = {run} Updated heart rate to {healthApp.get_heart_rate()}")
 
+
+            if run == 20:
+                print("\n\n UPDATE TEMP TEST \n\n")
+                action_temp_change(dashboard=dashboard)
+
+            if run == 40:
+                print("\n\n UPDATE SPEED TEST \n\n")
+                action_reducing_speed(dashboard=dashboard)
             
             run += 1
             time.sleep(0.2)

@@ -7,7 +7,7 @@ detector = dlib.get_frontal_face_detector()
 predictor = dlib.shape_predictor('predictors/shape_predictor_68_face_landmarks.dat')  # Use 68 or 5 landmarks predictor as necessary
 
 # Camera setup
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(1) # attempt updating this if not working
 
 # 3D model points (reference facial points for head pose estimation)
 model_points = np.array([
