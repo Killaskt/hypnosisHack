@@ -5,33 +5,38 @@ import time
 from collections import deque
 
 class DrowsinessDetector:
-    def __init__(self, yaw_threshold=20.0, pitch_threshold=10.0, ear_threshold=0.25, buffer_size=30):
-        """
-        Initialize the DrowsinessDetector class with specified thresholds and buffer size for yaw, pitch, and roll.
-
-        Parameters:
-        - yaw_threshold: The angle deviation (in degrees) to consider a person looking away (left or right).
-        - pitch_threshold: The angle deviation (in degrees) to consider a person looking too far up or down.
-        - ear_threshold: The Eye Aspect Ratio (EAR) below which the person is considered drowsy.
-        - buffer_size: The number of frames used to smooth out head pose data.
-        """
+    def __init__(self, yaw_threshold=20.0, pitch_threshold=10.0, ear_threshold=0.25, buffer_size=10, frame_skip=2,
+                 hypo_low_duration=30, hypo_medium_duration=60, hypo_high_duration=120, movement_tolerance=7):
         self.detector = dlib.get_frontal_face_detector()
         self.predictor = dlib.shape_predictor('predictors/shape_predictor_68_face_landmarks.dat')
 
+        # Thresholds
         self.yaw_threshold = yaw_threshold
         self.pitch_threshold = pitch_threshold
         self.ear_threshold = ear_threshold
+        self.frame_skip = frame_skip  # Skip frames for performance optimization
 
+        # Hypnosis thresholds (in seconds) - editable
+        self.hypo_low_duration = hypo_low_duration  # 30 seconds default
+        self.hypo_medium_duration = hypo_medium_duration  # 60 seconds default
+        self.hypo_high_duration = hypo_high_duration  # 120 seconds default
+
+        self.movement_tolerance = movement_tolerance  # Tolerance for small movements in yaw/pitch
+        
         self.distracted = False
         self.distracted_start_time = None
         self.total_distracted_time = 0.0
 
-        # Circular queues to store the last N yaw, pitch, and roll values
+        # Hypnosis variables
+        self.hypnotized = None  # None, 'low', 'medium', or 'high'
+        self.fixation_start_time = None
+
+        # Circular buffers to smooth yaw, pitch, and roll
         self.yaw_buffer = deque(maxlen=buffer_size)
         self.pitch_buffer = deque(maxlen=buffer_size)
         self.roll_buffer = deque(maxlen=buffer_size)
 
-        # Model points for head pose estimation (nose, chin, eyes, mouth)
+        # Model points for head pose estimation
         self.model_points = np.array([
             (0.0, 0.0, 0.0),        # Nose tip
             (0.0, -330.0, -65.0),   # Chin
@@ -41,19 +46,23 @@ class DrowsinessDetector:
             (150.0, -150.0, -125.0)  # Right mouth corner
         ])
 
+        # Buffers for fixation detection (for hypnosis detection)
+        self.last_gaze_positions = deque(maxlen=30)  # Buffer for recent yaw/pitch
+        self.blink_times = deque(maxlen=10)  # Buffer for blink timestamps
+
+        # Frame counter to skip frames
+        self.frame_count = 0
+
+        # Variables to store processed values between skipped frames
+        self.avg_pitch = 0
+        self.avg_yaw = 0
+        self.avg_roll = 0
+        self.ear = 0
+        self.rotation_vector = None
+        self.translation_vector = None
+        self.landmarks = None  # To store landmarks between frames
+
     def calculate_ear(self, eye):
-        """
-        Calculate the Eye Aspect Ratio (EAR) to detect drowsiness.
-
-        The EAR is based on the distances between specific points around the eyes. If the ratio falls below
-        a certain threshold, it indicates that the eyes are closing (potential drowsiness).
-
-        Parameters:
-        - eye: A set of 6 coordinates around the eye landmarks.
-
-        Returns:
-        - ear: The Eye Aspect Ratio (EAR) value.
-        """
         A = np.linalg.norm(eye[1] - eye[5])
         B = np.linalg.norm(eye[2] - eye[4])
         C = np.linalg.norm(eye[0] - eye[3])
@@ -61,15 +70,6 @@ class DrowsinessDetector:
         return ear
 
     def rotation_matrix_to_euler_angles(self, R):
-        """
-        Convert a 3D rotation matrix to Euler angles (pitch, yaw, roll).
-
-        Parameters:
-        - R: The 3x3 rotation matrix.
-
-        Returns:
-        - pitch, yaw, roll: The Euler angles representing the head's orientation.
-        """
         sy = np.sqrt(R[0, 0] * R[0, 0] + R[1, 0] * R[1, 0])
         singular = sy < 1e-6
 
@@ -82,40 +82,23 @@ class DrowsinessDetector:
             y = np.arctan2(-R[2, 0], sy)
             z = 0
 
-        return np.degrees(x), np.degrees(y), np.degrees(z)  # Convert from radians to degrees
+        return np.degrees(x), np.degrees(y), np.degrees(z)
 
     def adjust_pitch(self, pitch):
-        """
-        Adjust the pitch value to center around 0 degrees for a forward-looking head.
-
-        This corrects for the pitch angle exceeding 90 degrees, which could happen due to the orientation
-        of the head relative to the camera.
-
-        Parameters:
-        - pitch: The original pitch value.
-
-        Returns:
-        - The adjusted pitch value.
-        """
         if pitch > 90:
             pitch = pitch - 180
+        elif pitch < -90:
+            pitch = pitch + 180
         return pitch
 
+    def normalize_angle(self, angle):
+        while angle > 180:
+            angle -= 360
+        while angle < -180:
+            angle += 360
+        return angle
+
     def estimate_head_pose(self, landmarks, camera_matrix):
-        """
-        Estimate the head pose (yaw, pitch, roll) based on facial landmarks.
-
-        Uses the `solvePnP` method to find the rotation vectors and translation vectors that describe the pose.
-        Then, converts the rotation vector into Euler angles.
-
-        Parameters:
-        - landmarks: The 2D coordinates of facial landmarks from the image.
-        - camera_matrix: The camera matrix for solving the pose.
-
-        Returns:
-        - pitch, yaw, roll: The head pose angles.
-        """
-        # 2D image points corresponding to the 3D model points.
         image_points = np.array([
             (landmarks[30][0], landmarks[30][1]),  # Nose tip
             (landmarks[8][0], landmarks[8][1]),    # Chin
@@ -128,23 +111,16 @@ class DrowsinessDetector:
         dist_coeffs = np.zeros((4, 1))  # No lens distortion
         success, rotation_vector, translation_vector = cv2.solvePnP(self.model_points, image_points, camera_matrix, dist_coeffs)
 
-        # Convert the rotation vector to a rotation matrix.
+        # Convert rotation vector to rotation matrix
         rotation_matrix, _ = cv2.Rodrigues(rotation_vector)
         pitch, yaw, roll = self.rotation_matrix_to_euler_angles(rotation_matrix)
 
-        # Adjust the pitch to correct for camera orientation.
         pitch = self.adjust_pitch(pitch)
+        yaw = self.normalize_angle(yaw)
 
         return pitch, yaw, roll, rotation_vector, translation_vector
 
     def update_buffer(self, pitch, yaw, roll):
-        """
-        Update the circular buffers with the new pitch, yaw, and roll values.
-        This helps smooth the data by averaging out small variations over time.
-
-        Parameters:
-        - pitch, yaw, roll: The head pose angles to store.
-        """
         self.pitch_buffer.append(pitch)
         self.yaw_buffer.append(yaw)
         self.roll_buffer.append(roll)
@@ -158,71 +134,88 @@ class DrowsinessDetector:
     def check_distraction(self, yaw, pitch):
         return not (abs(yaw) <= self.yaw_threshold and abs(pitch) <= self.pitch_threshold)
 
+    def update_hypnotized_state(self, fixation_duration):
+        if fixation_duration >= self.hypo_high_duration:
+            self.hypnotized = "high"
+        elif fixation_duration >= self.hypo_medium_duration:
+            self.hypnotized = "medium"
+        elif fixation_duration >= self.hypo_low_duration:
+            self.hypnotized = "low"
+        else:
+            self.hypnotized = None
+
     def process_frame(self, frame, camera_matrix):
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = self.detector(gray)
+        self.frame_count += 1
 
-        if len(faces) == 0:
-            # No face detected: assume distracted.
-            self.distracted = True
-            cv2.putText(frame, "Face not visible: Distracted", (50, 300), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-            return frame
+        if self.frame_count % self.frame_skip == 0:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            faces = self.detector(gray)
 
-        for face in faces:
-            landmarks = self.predictor(gray, face)
-            landmarks = np.array([[p.x, p.y] for p in landmarks.parts()])
-
-            if not self.are_essential_landmarks_visible(landmarks):
-                # If essential landmarks are missing, assume distraction.
+            if len(faces) == 0:
                 self.distracted = True
-                cv2.putText(frame, "Partial face: Distracted", (50, 300), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-                continue
+                cv2.putText(frame, "Face not visible: Distracted", (50, 300), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                return frame
 
-            # Estimate head pose and get the rotation vector, translation vector for projection.
-            pitch, yaw, roll, rotation_vector, translation_vector = self.estimate_head_pose(landmarks, camera_matrix)
-            self.update_buffer(pitch, yaw, roll)
-            avg_pitch, avg_yaw, avg_roll = self.get_averaged_pose()
+            for face in faces:
+                self.landmarks = self.predictor(gray, face)
+                self.landmarks = np.array([[p.x, p.y] for p in self.landmarks.parts()])
 
-            # EAR calculation for both eyes to detect drowsiness.
-            left_eye = landmarks[36:42]
-            right_eye = landmarks[42:48]
-            left_ear = self.calculate_ear(left_eye)
-            right_ear = self.calculate_ear(right_eye)
-            ear = (left_ear + right_ear) / 2.0
+                if not self.are_essential_landmarks_visible(self.landmarks):
+                    self.distracted = True
+                    cv2.putText(frame, "Partial face: Distracted", (50, 300), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                    continue
 
-            if ear < self.ear_threshold:
-                cv2.putText(frame, "Drowsy", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-            else:
-                cv2.putText(frame, "Awake", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                pitch, yaw, roll, rotation_vector, translation_vector = self.estimate_head_pose(self.landmarks, camera_matrix)
+                self.update_buffer(pitch, yaw, roll)
 
-            # Check distraction based on yaw and pitch.
-            self.distracted = self.check_distraction(avg_yaw, avg_pitch)
+                self.avg_pitch, self.avg_yaw, self.avg_roll = self.get_averaged_pose()
+                self.rotation_vector = rotation_vector
+                self.translation_vector = translation_vector
 
-            if self.distracted:
-                if self.distracted_start_time is None:
-                    self.distracted_start_time = time.time()
-                distracted_time = time.time() - self.distracted_start_time
-                self.total_distracted_time += distracted_time
-                cv2.putText(frame, f"Distracted Time: {distracted_time:.2f} sec", (50, 330), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-            else:
-                self.distracted_start_time = None
+                left_eye = self.landmarks[36:42]
+                right_eye = self.landmarks[42:48]
+                left_ear = self.calculate_ear(left_eye)
+                right_ear = self.calculate_ear(right_eye)
+                self.ear = (left_ear + right_ear) / 2.0
 
-            # Display yaw, pitch, and roll on the frame.
-            cv2.putText(frame, f"Yaw: {avg_yaw:.2f}", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-            cv2.putText(frame, f"Pitch: {avg_pitch:.2f}", (50, 180), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-            cv2.putText(frame, f"Roll: {avg_roll:.2f}", (50, 210), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                if self.ear < self.ear_threshold:
+                    cv2.putText(frame, "Drowsy", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                    self.blink_times.append(time.time())
+                else:
+                    cv2.putText(frame, "Awake", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-            # Display distraction status and total distracted time.
-            cv2.putText(frame, f"Distracted: {self.distracted}", (50, 300), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255) if self.distracted else (255, 255, 255), 2)
-            cv2.putText(frame, f"Total Distracted Time: {self.total_distracted_time:.2f} sec", (50, 360), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                self.distracted = self.check_distraction(self.avg_yaw, self.avg_pitch)
 
-            # Draw the head direction line to show where the head is pointing.
-            dist_coeffs = np.zeros((4, 1))  # No lens distortion
-            nose_end_point3D = np.array([[0, 0, 1000.0]], dtype='float32')  # Point in the direction of the nose.
-            nose_end_point2D, _ = cv2.projectPoints(nose_end_point3D, rotation_vector, translation_vector, camera_matrix, dist_coeffs)
-            p1 = (int(landmarks[30][0]), int(landmarks[30][1]))  # Nose tip
-            p2 = (int(nose_end_point2D[0][0][0]), int(nose_end_point2D[0][0][1]))  # Projected nose tip
-            cv2.line(frame, p1, p2, (255, 0, 0), 2)  # Draw a blue line showing head direction.
+                # Hypnosis detection logic
+                self.last_gaze_positions.append((self.avg_yaw, self.avg_pitch))
+
+                if all(abs(self.avg_yaw - pos[0]) < self.movement_tolerance and abs(self.avg_pitch - pos[1]) < self.movement_tolerance for pos in self.last_gaze_positions):
+                    if self.fixation_start_time is None:
+                        self.fixation_start_time = time.time()
+
+                    fixation_duration = time.time() - self.fixation_start_time
+                    self.update_hypnotized_state(fixation_duration)
+
+                else:
+                    self.fixation_start_time = None
+                    self.hypnotized = None
+
+        # Display updates, including hypnosis state and fixation timer
+        fixation_duration_display = 0 if self.fixation_start_time is None else time.time() - self.fixation_start_time
+        cv2.putText(frame, f"Fixation Time: {fixation_duration_display:.2f} sec", (950, 280), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        cv2.putText(frame, f"Hypnotized: {self.hypnotized if self.hypnotized else 'None'}", (950, 330), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255) if self.hypnotized else (255, 255, 255), 2)
+
+        # Display yaw, pitch, roll, and EAR logs on screen
+        cv2.putText(frame, f"Yaw: {self.avg_yaw:.2f}", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+        cv2.putText(frame, f"Pitch: {self.avg_pitch:.2f}", (50, 180), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+        cv2.putText(frame, f"Roll: {self.avg_roll:.2f}", (50, 210), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+        cv2.putText(frame, f"EAR: {self.ear:.2f}", (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+
+        # Display distraction state and total distraction time
+        distracted_time = 0 if self.distracted_start_time is None else time.time() - self.distracted_start_time
+        cv2.putText(frame, f"Distracted: {self.distracted}", (50, 300), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255) if self.distracted else (255, 255, 255), 2)
+        cv2.putText(frame, f"Distracted Time: {distracted_time:.2f} sec", (50, 360), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        cv2.putText(frame, f"Total Distracted Time: {self.total_distracted_time:.2f} sec", (50, 390), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
         return frame
 
