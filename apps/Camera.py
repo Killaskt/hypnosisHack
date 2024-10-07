@@ -8,8 +8,8 @@ from collections import deque
 
 class DrowsinessDetector:
     def __init__(self, yaw_threshold=20.0, pitch_threshold=10.0, ear_threshold=0.25, buffer_size=10, frame_skip=2,
-                 hypo_low_duration=30, hypo_medium_duration=35, hypo_high_duration=40, movement_tolerance=7,
-                 drowsiness_confidence_threshold=2.0, distraction_time_threshold=3):
+                 hypo_low_duration=3, hypo_medium_duration=5, hypo_high_duration=10, movement_tolerance=7,
+                 drowsiness_confidence_threshold=.5, distraction_time_threshold=3):
         self.detector = dlib.get_frontal_face_detector()
         self.predictor = dlib.shape_predictor('predictors/shape_predictor_68_face_landmarks.dat')
 
@@ -273,7 +273,7 @@ class DrowsinessDetector:
 
     def run(self):
         # Main loop to capture frames and run the detection logic
-        cap = cv2.VideoCapture(1)
+        cap = cv2.VideoCapture(0)
         focal_length = cap.get(3)
         center = (cap.get(3) / 2, cap.get(4) / 2)
         camera_matrix = np.array([[focal_length, 0, center[0]],
